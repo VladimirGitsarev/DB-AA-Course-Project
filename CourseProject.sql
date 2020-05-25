@@ -80,8 +80,8 @@ CREATE OR REPLACE VIEW deals_details AS
 
 CREATE OR REPLACE VIEW orders_details AS
   SELECT orders.order_id, orders.order_in, orders.order_out, orders.task,
-         orders.status,orders.car_id, car.make, car.model, car.vin,
-         client.client_id, client.first_name, client.second_name
+         orders.status, orders.car_id, car.make, car.MODEL, car.vin,
+         client.client_id, orders.price, client.first_name, client.second_name 
   FROM orders INNER JOIN car ON car.car_id = orders.car_id
               INNER JOIN client ON car.client_id = client.client_id
   ORDER BY orders.order_in, orders.order_out DESC
@@ -681,7 +681,7 @@ SELECT * FROM TABLE(search_client.search_client(NULL, 'Hitsarau'));
 SELECT * FROM TABLE(search_order.search_order_id(5));
 SELECT * FROM TABLE(search_order.search_order_name('avad'));
 SELECT * FROM TABLE(search_order.search_order_date('19-05-2020'));
-SELECT * FROM TABLE(search_order.search_order_all('TRUE'));
+SELECT * FROM TABLE(search_order.search_order_all());
 SELECT * FROM TABLE(search_car.search_car());
 SELECT * FROM TABLE(search_product.search_product());
 SELECT * FROM TABLE(search_deal.search_deal('gavr'))

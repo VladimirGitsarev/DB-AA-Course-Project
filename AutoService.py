@@ -25,15 +25,21 @@ class AutoService(QtWidgets.QMainWindow):
         self.show_list(self.ui.dealslistWidget, 12)
         self.show_list(self.ui.deal_client_listWidget, 10)
         self.show_list(self.ui.deal_prod_listWidget, 10)
+        self.show_list(self.ui.orderslistWidget, 12)
+        self.show_list(self.ui.order_car_listWidget, 10)
 
         self.ui.listWidget.itemSelectionChanged.connect(self.show_info)
         self.ui.carslistWidget.itemSelectionChanged.connect(self.show_info)
         self.ui.productslistWidget.itemSelectionChanged.connect(self.show_info)
         self.ui.dealslistWidget.itemSelectionChanged.connect(self.show_info)
+        self.ui.orderslistWidget.itemSelectionChanged.connect(self.show_info)
 
         self.ui.client_car_listWidget.itemSelectionChanged.connect(self.show_line)
         self.ui.deal_prod_listWidget.itemSelectionChanged.connect(self.show_line)
         self.ui.deal_client_listWidget.itemSelectionChanged.connect(self.show_line)
+        self.ui.order_car_listWidget.itemSelectionChanged.connect(self.show_line)
+        self.ui.close_order_btn.clicked.connect(self.close_order)
+        
         
         self.ui.search_client_btn.clicked.connect(self.search)
         self.ui.search_car_btn.clicked.connect(self.search)
@@ -42,6 +48,8 @@ class AutoService(QtWidgets.QMainWindow):
         self.ui.search_deal_button.clicked.connect(self.search)
         self.ui.deal_search_client_btn.clicked.connect(self.search)
         self.ui.deal_search_prod_btn.clicked.connect(self.search)
+        self.ui.search_order_button.clicked.connect(self.search)
+        self.ui.order_car_search_button.clicked.connect(self.search)
 
         self.ui.edit_product_btn.clicked.connect(self.edit)
         self.ui.edit_btn.clicked.connect(self.edit)
@@ -51,6 +59,7 @@ class AutoService(QtWidgets.QMainWindow):
         self.ui.add_btn.clicked.connect(self.add)
         self.ui.add_car_btn.clicked.connect(self.add)
         self.ui.add_deal_btn.clicked.connect(self.add)
+        self.ui.add_order_button.clicked.connect(self.add)
 
         self.ui.delete_btn.clicked.connect(self.delete)        
         self.ui.delete_car_btn.clicked.connect(self.delete)
@@ -66,7 +75,8 @@ class AutoService(QtWidgets.QMainWindow):
         lines = {
             'client_car_listWidget': self.ui.car_client_id_line_2,
             'deal_prod_listWidget' : self.ui.deal_product_line,
-            'deal_client_listWidget' : self.ui.deal_client_line
+            'deal_client_listWidget' : self.ui.deal_client_line,
+            'order_car_listWidget': self.ui.new_order_car_id_line
         }
         try:
             text = self.sender().selectedItems()[0].text()
@@ -83,8 +93,19 @@ class AutoService(QtWidgets.QMainWindow):
             res = cur.fetchone()
             self.ui.deal_price_line_2.setText(str(round(float(res[0]) * self.ui.spinBox.value(), 2)))
         except:
-             self.ui.deal_price_line_2.setText('0')
+            self.ui.deal_price_line_2.setText('0')
 
+    def close_order(self):
+        text = self.ui.orderslistWidget.selectedItems()[0].text()
+        item_id = int(text.split('.')[0])
+        buttonReply = QMessageBox.question(self, 'Confirm close', \
+                    "Are you sure you want to close order {}?".format(item_id), \
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if buttonReply == QMessageBox.Yes:
+            cur = self.con.cursor()
+            info = cur.var(cx_Oracle.STRING)
+            cur.callproc('update_order', (item_id, info))
+            self.ui.order_info_label.setText(info.getvalue())
     
     
 
@@ -127,7 +148,8 @@ class AutoService(QtWidgets.QMainWindow):
             'add_prod_btn':'insert_product',
             'add_car_btn': 'insert_car',
             'add_btn': 'insert_client',
-            'add_deal_btn':'insert_deal'
+            'add_deal_btn':'insert_deal',
+            'add_order_button':'insert_order'
         }
         fields = {
             'add_prod_btn':[
@@ -155,19 +177,26 @@ class AutoService(QtWidgets.QMainWindow):
                 self.ui.deal_product_line,
                 self.ui.spinBox,
                 self.ui.deal_client_line
+            ],
+            'add_order_button':[
+                self.ui.new_order_price_line,
+                self.ui.new_order_task_line,
+                self.ui.new_order_car_id_line
             ]
         }
         labels = {
             'add_prod_btn': self.ui.prod_info_label,
             'add_car_btn': self.ui.car_info_label,
             'add_btn': self.ui.info_label,
-            'add_deal_btn':self.ui.prod_info_label_2
+            'add_deal_btn':self.ui.prod_info_label_2,
+            'add_order_button':self.ui.order_info_label
         }
         widgets = {
             'add_prod_btn':self.ui.productslistWidget,
             'add_car_btn':self.ui.carslistWidget,
             'add_btn':self.ui.listWidget,
-            'add_deal_btn':self.ui.dealslistWidget
+            'add_deal_btn':self.ui.dealslistWidget,
+            'add_order_button':self.ui.orderslistWidget
         }
         cur = self.con.cursor()
         info_var = cur.var(cx_Oracle.STRING)
@@ -265,7 +294,9 @@ class AutoService(QtWidgets.QMainWindow):
             'search_client_btn': self.ui.listWidget,
             'search_deal_button': self.ui.dealslistWidget,
             'deal_search_prod_btn':self.ui.deal_prod_listWidget,
-            'deal_search_client_btn':self.ui.deal_client_listWidget
+            'deal_search_client_btn':self.ui.deal_client_listWidget,
+            'search_order_button':self.ui.orderslistWidget,
+            'order_car_search_button':self.ui.order_car_listWidget
         }
         procedures = {
             'search_product_button': 'SELECT * FROM TABLE(search_product.search_product(:query))',
@@ -274,7 +305,8 @@ class AutoService(QtWidgets.QMainWindow):
             'search_client_btn':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT(:id, :s_name))',
             'search_deal_button': 'SELECT * FROM TABLE(search_deal.search_deal(:query))',
             'deal_search_prod_btn':'SELECT * FROM TABLE(search_product.search_product(:query))',
-            'deal_search_client_btn':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT(:id, :s_name))'
+            'deal_search_client_btn':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT(:id, :s_name))',
+            'order_car_search_button': 'SELECT * FROM TABLE(search_car.search_car(:query))'
         }
         params = {
             'search_product_button': {'query':self.ui.search_product_line.text()},
@@ -283,20 +315,47 @@ class AutoService(QtWidgets.QMainWindow):
             'search_client_btn': {'id':None, 's_name':self.ui.lineEdit.text()},
             'search_deal_button': {'query':self.ui.search_deal_line.text()},
             'deal_search_prod_btn':{'query':self.ui.dela_search_prod_line.text()},
-            'deal_search_client_btn':{'id':None, 's_name':self.ui.deal_search_client_line.text()}
+            'deal_search_client_btn':{'id':None, 's_name':self.ui.deal_search_client_line.text()},
+            'order_car_search_button':{'query':self.ui.order_car_search_line.text()}
         }
         cur = self.con.cursor()
-        cur.execute(procedures[str(self.sender().objectName())], params[str(self.sender().objectName())])
-        res = cur.fetchall()
+        if self.sender().objectName() == 'search_order_button':
+            res = []
+            try:
+                param = datetime.datetime.strptime(self.ui.search_order_line.text(), '%d-%m-%Y')
+            except:
+                param = self.ui.search_order_line.text()
+            queries = ['SELECT * FROM TABLE(search_order.search_order_id(:param))', 
+                    'SELECT * FROM TABLE(search_order.search_order_name(:param))',
+                    'SELECT * FROM TABLE(search_order.search_order_date(:param))']
+            for q in queries:
+                try:
+                    cur.execute(q, {'param':param})
+                    result = cur.fetchall()
+                    for item in result:
+                        res.append(item)
+                except:
+                    pass
+        else:
+            cur.execute(procedures[str(self.sender().objectName())], params[str(self.sender().objectName())])
+            res = cur.fetchall()
         widgets[str(self.sender().objectName())].clear()
         for i in res:
             item = QtWidgets.QListWidgetItem()
-            if str(self.sender().objectName()) in ['search_car_btn', 'deal_search_prod_btn', 'deal_search_client_btn']:
+            if str(self.sender().objectName()) in [
+                'search_car_btn',
+                'deal_search_prod_btn', 
+                'deal_search_client_btn', 
+                'order_car_search_button'
+                ]:
                 item.setFont(QtGui.QFont('Tahoma', 10))
             else:
                 item.setFont(QtGui.QFont('Tahoma', 12))
             item.setTextAlignment(Qt.AlignHCenter | Qt.AlignTop)
-            item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[2]))
+            if self.sender().objectName() == 'search_order_button':
+                item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[3]))
+            else:
+                item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[2]))
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | \
                          QtCore.Qt.ItemIsSelectable | Qt.ItemIsDragEnabled)
             widgets[str(self.sender().objectName())].addItem(item)
@@ -345,20 +404,41 @@ class AutoService(QtWidgets.QMainWindow):
                 self.ui.deal_manufacturer_line,
                 self.ui.deal_price_line,
                 self.ui.deal_quant_line
+            ],
+            'orderslistWidget':[
+                self.ui.order_id_line,
+                self.ui.order_in_line,
+                self.ui.order_out_line,
+                self.ui.order_task,
+                self.ui.order_status,
+                self.ui.order_car_id,
+                self.ui.order_car_make,
+                self.ui.order_car_maodel,
+                self.ui.order_car_vin,
+                self.ui.order_client_id,
+                self.ui.order_price_line
             ]
         }
         procedures = {
             'productslistWidget':'SELECT * FROM products_details WHERE product_id = :param',
             'listWidget':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT(:param))',
             'carslistWidget':'SELECT * FROM cars_details where car_id = :param',
-            'dealslistWidget':'SELECT * FROM deals_details WHERE deal_id = :param'
+            'dealslistWidget':'SELECT * FROM deals_details WHERE deal_id = :param',
+            'orderslistWidget':'SELECT * FROM orders_details WHERE order_id = :param'
         }
         try:
             text = list_widget.selectedItems()[0].text()
             item_id = int(text.split('.')[0])
             cur = self.con.cursor()
             cur.execute(procedures[self.sender().objectName()], {'param':item_id})
-            res = list(cur.fetchone())
+            if self.sender().objectName() == 'orderslistWidget':
+                res = list(cur.fetchone())[:-2]
+                if res[4] == 'IN PROGRESS':
+                    self.ui.close_order_btn.setEnabled(True)
+                else:
+                    self.ui.close_order_btn.setEnabled(False)
+            else:
+                res = list(cur.fetchone())
             if self.sender().objectName() == 'dealslistWidget':
                 res.remove(res[8])
             for i in range(len(res)):
@@ -382,7 +462,9 @@ class AutoService(QtWidgets.QMainWindow):
             'carslistWidget':'SELECT * FROM TABLE(search_car.search_car())',
             'dealslistWidget':'SELECT * FROM TABLE(search_deal.search_deal())',
             'deal_client_listWidget':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT())',
-            'deal_prod_listWidget':'SELECT * FROM TABLE(search_product.search_product())'
+            'deal_prod_listWidget':'SELECT * FROM TABLE(search_product.search_product())',
+            'orderslistWidget':'SELECT * FROM TABLE(search_order.search_order_all())',
+            'order_car_listWidget':'SELECT * FROM TABLE(search_car.search_car())'
         }
         widget.clear()
         cur = self.con.cursor()
@@ -392,12 +474,13 @@ class AutoService(QtWidgets.QMainWindow):
             item = QtWidgets.QListWidgetItem()
             item.setFont(QtGui.QFont('Tahoma', fs))
             item.setTextAlignment(Qt.AlignHCenter | Qt.AlignTop)
-            item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[2]))
+            if widget.objectName() == 'orderslistWidget':
+                item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[3]))
+            else:
+                item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[2]))
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsSelectable | Qt.ItemIsDragEnabled)
             widget.addItem(item)
     
-
-
 def main():
     app = QtWidgets.QApplication(sys.argv)
     app.setStyle('Fusion')
