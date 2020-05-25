@@ -22,16 +22,26 @@ class AutoService(QtWidgets.QMainWindow):
         self.show_list(self.ui.client_car_listWidget, 10)
         self.show_list(self.ui.carslistWidget, 12)
         self.show_list(self.ui.productslistWidget, 12)
+        self.show_list(self.ui.dealslistWidget, 12)
+        self.show_list(self.ui.deal_client_listWidget, 10)
+        self.show_list(self.ui.deal_prod_listWidget, 10)
 
         self.ui.listWidget.itemSelectionChanged.connect(self.show_info)
         self.ui.carslistWidget.itemSelectionChanged.connect(self.show_info)
         self.ui.productslistWidget.itemSelectionChanged.connect(self.show_info)
-        self.ui.client_car_listWidget.itemSelectionChanged.connect(self.show_client_car_id)
+        self.ui.dealslistWidget.itemSelectionChanged.connect(self.show_info)
+
+        self.ui.client_car_listWidget.itemSelectionChanged.connect(self.show_line)
+        self.ui.deal_prod_listWidget.itemSelectionChanged.connect(self.show_line)
+        self.ui.deal_client_listWidget.itemSelectionChanged.connect(self.show_line)
         
         self.ui.search_client_btn.clicked.connect(self.search)
         self.ui.search_car_btn.clicked.connect(self.search)
         self.ui.search_car_button.clicked.connect(self.search)
         self.ui.search_product_button.clicked.connect(self.search)
+        self.ui.search_deal_button.clicked.connect(self.search)
+        self.ui.deal_search_client_btn.clicked.connect(self.search)
+        self.ui.deal_search_prod_btn.clicked.connect(self.search)
 
         self.ui.edit_product_btn.clicked.connect(self.edit)
         self.ui.edit_btn.clicked.connect(self.edit)
@@ -40,20 +50,42 @@ class AutoService(QtWidgets.QMainWindow):
         self.ui.add_prod_btn.clicked.connect(self.add)
         self.ui.add_btn.clicked.connect(self.add)
         self.ui.add_car_btn.clicked.connect(self.add)
+        self.ui.add_deal_btn.clicked.connect(self.add)
 
         self.ui.delete_btn.clicked.connect(self.delete)        
         self.ui.delete_car_btn.clicked.connect(self.delete)
         self.ui.delete_product_btn.clicked.connect(self.delete)
 
+        self.ui.deal_client_line.textChanged.connect(self.calc_price)
+        self.ui.deal_product_line.textChanged.connect(self.calc_price)
+        self.ui.spinBox.valueChanged.connect(self.calc_price)
+
  
     ############################## OTHER ##############################
-    def show_client_car_id(self):
+    def show_line(self):
+        lines = {
+            'client_car_listWidget': self.ui.car_client_id_line_2,
+            'deal_prod_listWidget' : self.ui.deal_product_line,
+            'deal_client_listWidget' : self.ui.deal_client_line
+        }
         try:
-            text = self.ui.client_car_listWidget.selectedItems()[0].text()
+            text = self.sender().selectedItems()[0].text()
             client_id = int(text.split('.')[0])
-            self.ui.car_client_id_line_2.setText(str(client_id))
+            lines[self.sender().objectName()].setText(str(client_id))
         except:
             pass
+
+    def calc_price(self):
+        try:
+            cur = self.con.cursor()
+            cur.execute('SELECT price FROM product WHERE product_id = :id', \
+                        {'id':self.ui.deal_product_line.text()})
+            res = cur.fetchone()
+            self.ui.deal_price_line_2.setText(str(round(float(res[0]) * self.ui.spinBox.value(), 2)))
+        except:
+             self.ui.deal_price_line_2.setText('0')
+
+    
     
 
     ############################## DELETE ##############################
@@ -94,7 +126,8 @@ class AutoService(QtWidgets.QMainWindow):
         procedures = {
             'add_prod_btn':'insert_product',
             'add_car_btn': 'insert_car',
-            'add_btn': 'insert_client'
+            'add_btn': 'insert_client',
+            'add_deal_btn':'insert_deal'
         }
         fields = {
             'add_prod_btn':[
@@ -117,23 +150,32 @@ class AutoService(QtWidgets.QMainWindow):
                 self.ui.bd_line_2, 
                 self.ui.addr_line_2, 
                 self.ui.phone_line_2
+            ],
+            'add_deal_btn':[
+                self.ui.deal_product_line,
+                self.ui.spinBox,
+                self.ui.deal_client_line
             ]
         }
         labels = {
             'add_prod_btn': self.ui.prod_info_label,
             'add_car_btn': self.ui.car_info_label,
-            'add_btn': self.ui.info_label
+            'add_btn': self.ui.info_label,
+            'add_deal_btn':self.ui.prod_info_label_2
         }
         widgets = {
             'add_prod_btn':self.ui.productslistWidget,
             'add_car_btn':self.ui.carslistWidget,
-            'add_btn':self.ui.listWidget
+            'add_btn':self.ui.listWidget,
+            'add_deal_btn':self.ui.dealslistWidget
         }
         cur = self.con.cursor()
         info_var = cur.var(cx_Oracle.STRING)
-        rows = [row.text() for row in fields[self.sender().objectName()]]
+        rows = [row.text() for row in fields[self.sender().objectName()] if type(row) == QLineEdit]
         if self.sender().objectName() == 'add_btn':
             rows[2] = datetime.datetime.strptime(rows[2].replace(' ', ''), '%d-%m-%Y')
+        elif self.sender().objectName() == 'add_deal_btn':
+            rows.insert(1, fields[self.sender().objectName()][1].value())
         rows.append(info_var)
         rows = tuple(rows)
         cur.callproc(procedures[self.sender().objectName()], rows)
@@ -142,7 +184,10 @@ class AutoService(QtWidgets.QMainWindow):
         if self.sender().objectName() == 'add_btn':
             self.show_list(self.ui.client_car_listWidget, 12)
         for row in fields[self.sender().objectName()]:
-            row.setText('')
+            if type(row) == QLineEdit:
+                row.setText('')
+            else:
+                row.setValue(1)
 
 
         
@@ -217,19 +262,28 @@ class AutoService(QtWidgets.QMainWindow):
             'search_product_button':self.ui.productslistWidget,
             'search_car_button': self.ui.carslistWidget, 
             'search_car_btn': self.ui.client_car_listWidget, 
-            'search_client_btn': self.ui.listWidget
+            'search_client_btn': self.ui.listWidget,
+            'search_deal_button': self.ui.dealslistWidget,
+            'deal_search_prod_btn':self.ui.deal_prod_listWidget,
+            'deal_search_client_btn':self.ui.deal_client_listWidget
         }
         procedures = {
             'search_product_button': 'SELECT * FROM TABLE(search_product.search_product(:query))',
             'search_car_button': 'SELECT * FROM TABLE(search_car.search_car(:query))', 
             'search_car_btn': 'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT(:id, :s_name))', 
-            'search_client_btn':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT(:id, :s_name))'
+            'search_client_btn':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT(:id, :s_name))',
+            'search_deal_button': 'SELECT * FROM TABLE(search_deal.search_deal(:query))',
+            'deal_search_prod_btn':'SELECT * FROM TABLE(search_product.search_product(:query))',
+            'deal_search_client_btn':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT(:id, :s_name))'
         }
         params = {
             'search_product_button': {'query':self.ui.search_product_line.text()},
             'search_car_button': {'query':self.ui.search_car_line.text()}, 
             'search_car_btn': {'id':None, 's_name':self.ui.search_car_client.text()}, 
-            'search_client_btn': {'id':None, 's_name':self.ui.lineEdit.text()}
+            'search_client_btn': {'id':None, 's_name':self.ui.lineEdit.text()},
+            'search_deal_button': {'query':self.ui.search_deal_line.text()},
+            'deal_search_prod_btn':{'query':self.ui.dela_search_prod_line.text()},
+            'deal_search_client_btn':{'id':None, 's_name':self.ui.deal_search_client_line.text()}
         }
         cur = self.con.cursor()
         cur.execute(procedures[str(self.sender().objectName())], params[str(self.sender().objectName())])
@@ -237,7 +291,7 @@ class AutoService(QtWidgets.QMainWindow):
         widgets[str(self.sender().objectName())].clear()
         for i in res:
             item = QtWidgets.QListWidgetItem()
-            if str(self.sender().objectName()) == 'search_car_btn':
+            if str(self.sender().objectName()) in ['search_car_btn', 'deal_search_prod_btn', 'deal_search_client_btn']:
                 item.setFont(QtGui.QFont('Tahoma', 10))
             else:
                 item.setFont(QtGui.QFont('Tahoma', 12))
@@ -279,19 +333,34 @@ class AutoService(QtWidgets.QMainWindow):
                 self.ui.car_client_id_line,
                 self.ui.car_client_f_name_line,
                 self.ui.car_client_s_name_line,
+            ],
+            'dealslistWidget':[
+                self.ui.deal_id_line,
+                self.ui.deal_date_line,
+                self.ui.client_id_line,
+                self.ui.cl_f_name_line,
+                self.ui.cl_s_name_line,
+                self.ui.prod_id_line,
+                self.ui.prod_name_line,
+                self.ui.deal_manufacturer_line,
+                self.ui.deal_price_line,
+                self.ui.deal_quant_line
             ]
         }
         procedures = {
             'productslistWidget':'SELECT * FROM products_details WHERE product_id = :param',
             'listWidget':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT(:param))',
-            'carslistWidget':'SELECT * FROM cars_details where car_id = :param'
+            'carslistWidget':'SELECT * FROM cars_details where car_id = :param',
+            'dealslistWidget':'SELECT * FROM deals_details WHERE deal_id = :param'
         }
         try:
             text = list_widget.selectedItems()[0].text()
             item_id = int(text.split('.')[0])
             cur = self.con.cursor()
             cur.execute(procedures[self.sender().objectName()], {'param':item_id})
-            res = cur.fetchone()
+            res = list(cur.fetchone())
+            if self.sender().objectName() == 'dealslistWidget':
+                res.remove(res[8])
             for i in range(len(res)):
                 if type(res[i]) == datetime.datetime:
                     fields[self.sender().objectName()][i].setText(res[i].strftime("%d-%m-%Y "))
@@ -310,17 +379,20 @@ class AutoService(QtWidgets.QMainWindow):
             'productslistWidget':'SELECT * FROM TABLE(search_product.search_product())',
             'listWidget':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT())',
             'client_car_listWidget':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT())',
-            'carslistWidget':'SELECT * FROM TABLE(search_car.search_car())'
+            'carslistWidget':'SELECT * FROM TABLE(search_car.search_car())',
+            'dealslistWidget':'SELECT * FROM TABLE(search_deal.search_deal())',
+            'deal_client_listWidget':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT())',
+            'deal_prod_listWidget':'SELECT * FROM TABLE(search_product.search_product())'
         }
         widget.clear()
         cur = self.con.cursor()
         cur.execute(procedures[str(widget.objectName())])
         res = cur.fetchall()
-        for client in res:
+        for i in res:
             item = QtWidgets.QListWidgetItem()
             item.setFont(QtGui.QFont('Tahoma', fs))
             item.setTextAlignment(Qt.AlignHCenter | Qt.AlignTop)
-            item.setText(str(client[0]) + '. ' + str(client[1])+ ' ' + str(client[2]))
+            item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[2]))
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsSelectable | Qt.ItemIsDragEnabled)
             widget.addItem(item)
     

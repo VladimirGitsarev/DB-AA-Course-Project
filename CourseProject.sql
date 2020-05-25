@@ -462,6 +462,60 @@ BEGIN
   END IF;
 END;
 
+CREATE OR REPLACE PACKAGE search_deal AS
+
+    TYPE deal_record IS record(
+                
+      deal_id NUMBER, 
+      deal_date DATE, 
+      client_id NUMBER, 
+      first_name VARCHAR(100), 
+      second_name VARCHAR(100), 
+      product_id NUMBER, 
+      product_name VARCHAR(100), 
+      manufacturer VARCHAR(100), 
+      info VARCHAR(100), 
+      quantity NUMBER, 
+      price NUMBER(10,2));
+      
+    TYPE deal_table IS TABLE OF deal_record;
+
+    FUNCTION search_deal
+    (
+      p_query VARCHAR DEFAULT NULL
+    )
+        RETURN deal_table
+        pipelined;
+END;
+
+CREATE OR REPLACE PACKAGE BODY search_deal AS
+    FUNCTION search_deal
+    (
+      p_query VARCHAR DEFAULT NULL
+    )
+        RETURN deal_table
+        pipelined IS
+    BEGIN
+      IF p_query IS NULL THEN
+        FOR curr IN
+          (
+            SELECT * FROM deals_details
+          ) loop  
+          pipe ROW (curr);
+          END loop;
+      ELSE
+        FOR curr IN
+          (
+            SELECT * FROM deals_details WHERE 
+            lower(concat(concat(first_name, ' '), second_name)) LIKE '%'|| lower(p_query) ||'%'
+          ) loop  
+          pipe ROW (curr);
+          END loop;
+        RETURN;
+    END IF;
+    END search_deal;
+END;
+
 --Orders Procedures--
 CREATE OR REPLACE PROCEDURE insert_order(
     p_price IN orders.price%TYPE,
@@ -628,8 +682,9 @@ SELECT * FROM TABLE(search_order.search_order_id(5));
 SELECT * FROM TABLE(search_order.search_order_name('avad'));
 SELECT * FROM TABLE(search_order.search_order_date('19-05-2020'));
 SELECT * FROM TABLE(search_order.search_order_all('TRUE'));
-SELECT * FROM TABLE(search_car.search_car())
-SELECT * FROM TABLE(search_product.search_product())
+SELECT * FROM TABLE(search_car.search_car());
+SELECT * FROM TABLE(search_product.search_product());
+SELECT * FROM TABLE(search_deal.search_deal('gavr'))
 SELECT * FROM deals_details
 SELECT * FROM orders_details
 SELECT * FROM cars_details
