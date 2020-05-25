@@ -556,6 +556,7 @@ CREATE OR REPLACE PACKAGE search_order AS
       model VARCHAR(100),
       vin VARCHAR(10),
       client_id NUMBER,
+      price NUMBER(10,2),
       first_name VARCHAR(100),
       second_name varchar(100));
 

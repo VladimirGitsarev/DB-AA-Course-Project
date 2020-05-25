@@ -25,7 +25,7 @@ class AutoService(QtWidgets.QMainWindow):
         self.show_list(self.ui.dealslistWidget, 12)
         self.show_list(self.ui.deal_client_listWidget, 10)
         self.show_list(self.ui.deal_prod_listWidget, 10)
-        self.show_list(self.ui.orderslistWidget, 12)
+        self.show_list(self.ui.orderslistWidget, 10)
         self.show_list(self.ui.order_car_listWidget, 10)
 
         self.ui.listWidget.itemSelectionChanged.connect(self.show_info)
@@ -346,14 +346,15 @@ class AutoService(QtWidgets.QMainWindow):
                 'search_car_btn',
                 'deal_search_prod_btn', 
                 'deal_search_client_btn', 
-                'order_car_search_button'
+                'order_car_search_button',
+                'search_order_button'
                 ]:
                 item.setFont(QtGui.QFont('Tahoma', 10))
             else:
                 item.setFont(QtGui.QFont('Tahoma', 12))
             item.setTextAlignment(Qt.AlignHCenter | Qt.AlignTop)
             if self.sender().objectName() == 'search_order_button':
-                item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[3]))
+                item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[3][:10] + '... '))
             else:
                 item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[2]))
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | \
@@ -475,7 +476,7 @@ class AutoService(QtWidgets.QMainWindow):
             item.setFont(QtGui.QFont('Tahoma', fs))
             item.setTextAlignment(Qt.AlignHCenter | Qt.AlignTop)
             if widget.objectName() == 'orderslistWidget':
-                item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[3]))
+                item.setText(str(i[0]) + '. ' + str(i[1]) + ' ' + str(i[3][:10]) + '... ') 
             else:
                 item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[2]))
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsSelectable | Qt.ItemIsDragEnabled)
