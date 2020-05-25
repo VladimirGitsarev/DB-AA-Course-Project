@@ -282,6 +282,58 @@ BEGIN
   COMMIT;
 END;
 
+CREATE OR REPLACE PACKAGE search_product AS
+
+    TYPE product_record IS record(
+    product_id NUMBER(10),
+    product_name VARCHAR(100), 
+    manufacturer VARCHAR(100),
+    info VARCHAR(100),
+    price NUMBER(10,2),
+    quantity NUMBER(10));
+
+    TYPE product_table IS TABLE OF product_record;
+
+    FUNCTION search_product
+    (
+      p_query VARCHAR DEFAULT NULL 
+    )
+        RETURN product_table
+        pipelined;
+END;
+
+CREATE OR REPLACE PACKAGE BODY search_product AS
+    FUNCTION search_product
+    (
+      p_query VARCHAR DEFAULT NULL 
+    )
+        RETURN product_table
+        pipelined IS
+    BEGIN
+      IF p_query IS NULL THEN
+        FOR curr IN
+          (
+            SELECT * FROM products_details
+          ) loop  
+          pipe ROW (curr);
+          END loop;
+      ELSE
+        FOR curr IN
+          (
+            SELECT * FROM products_details WHERE lower(product_name) 
+            like '%'|| lower(p_query) || '%'
+            OR lower(manufacturer) like '%'|| lower(p_query) || '%'
+            OR lower(concat(concat(product_name, ' '), manufacturer))
+            LIKE '%'|| lower(p_query) || '%'
+            or lower(info) like '%'|| lower(p_query) || '%'
+          ) loop  
+          pipe ROW (curr);
+          END loop;
+        RETURN;
+    END IF;
+    END search_product;
+END;
+
 --Cars Procedures--
 CREATE OR REPLACE PROCEDURE insert_car(
     p_make IN car.make%TYPE, 
@@ -334,6 +386,59 @@ BEGIN
   p_info := 'CAR ' || p_car_id || ' DELETED';
   COMMIT;
 END;
+
+CREATE OR REPLACE PACKAGE search_car AS
+
+    TYPE car_record IS record(
+          
+      car_id NUMBER,
+      make VARCHAR(50), 
+      MODEL VARCHAR(100), 
+      vin VARCHAR(10), 
+      YEAR NUMBER,
+      client_id NUMBER, 
+      first_name VARCHAR(100), 
+      second_name VARCHAR(100));
+      
+    TYPE car_table IS TABLE OF car_record;
+
+    FUNCTION search_car
+    (
+      p_query VARCHAR DEFAULT NULL
+    )
+        RETURN car_table
+        pipelined;
+END;
+
+CREATE OR REPLACE PACKAGE BODY search_car AS
+    FUNCTION search_car
+    (
+      p_query VARCHAR DEFAULT NULL
+    )
+        RETURN car_table
+        pipelined IS
+    BEGIN
+      IF p_query IS NULL THEN
+        FOR curr IN
+          (
+            SELECT * FROM cars_details
+          ) loop  
+          pipe ROW (curr);
+          END loop;
+      ELSE
+        FOR curr IN
+          (
+            SELECT * FROM cars_details WHERE lower(make) LIKE '%'|| lower(p_query) ||'%'
+            OR lower(MODEL) LIKE '%'|| lower(p_query) ||'%' OR lower(vin) LIKE '%'|| lower(p_query) ||'%'
+            OR lower(concat(concat(first_name, ' '), second_name)) LIKE '%'|| lower(p_query) ||'%'
+          ) loop  
+          pipe ROW (curr);
+          END loop;
+        RETURN;
+    END IF;
+    END search_car;
+END;
+
 
 --Deals Procedures--
 CREATE OR REPLACE PROCEDURE insert_deal(
@@ -523,14 +628,19 @@ SELECT * FROM TABLE(search_order.search_order_id(5));
 SELECT * FROM TABLE(search_order.search_order_name('avad'));
 SELECT * FROM TABLE(search_order.search_order_date('19-05-2020'));
 SELECT * FROM TABLE(search_order.search_order_all('TRUE'));
+SELECT * FROM TABLE(search_car.search_car())
+SELECT * FROM TABLE(search_product.search_product())
 SELECT * FROM deals_details
 SELECT * FROM orders_details
 SELECT * FROM cars_details
+SELECT * FROM products_details
 SELECT * FROM client
 SELECT * FROM car
 SELECT * FROM product
 SELECT * FROM deal
 SELECT * FROM orders
+
+SELECT * FROM products_details WHERE product_id = 41
 -------------------------------------SELECTS------------------------------------
 
 
