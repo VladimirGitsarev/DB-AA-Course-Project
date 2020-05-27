@@ -1,19 +1,68 @@
 import sys
 import cx_Oracle
 import datetime
+import hashlib
+import uuid
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import Qt, QObject
 from PyQt5.QtWidgets import QLabel, QLineEdit, QTextEdit, QPushButton, QHBoxLayout, QVBoxLayout, QListWidgetItem, QTableWidgetItem
 from PyQt5.QtWidgets import QApplication, QWidget, QInputDialog, QLineEdit, QFileDialog, QMessageBox
 from PyQt5.QtGui import QIcon
-from AutoServiceUI import Ui_MainWindow
+from AutoServiceUI import Ui_MainWindow as main_Ui_MainWindow
+from LoginPage import Ui_MainWindow as login_Ui_MainWindow
 
-class AutoService(QtWidgets.QMainWindow):
+class LoginPage(QtWidgets.QMainWindow):
+    main_window = QtCore.pyqtSignal(int, str)
+
     def __init__(self):
-        super(AutoService, self).__init__()
-        self.ui = Ui_MainWindow()
+        super(LoginPage, self).__init__()
+        self.setFixedSize(640, 480)
+        self.ui = login_Ui_MainWindow()
         self.ui.setupUi(self)
+        self.con = cx_Oracle.connect('system/Djdf1605@localhost/orcle')
+
+        self.ui.login_btn.clicked.connect(self.login)
+        self.ui.password_edit.textChanged.connect(self.clear_error)
+        self.ui.firstname_line.textChanged.connect(self.clear_error)
+        self.ui.lastname_line.textChanged.connect(self.clear_error)
+
+    def clear_error(self):
+        self.ui.err_label.setText('')
+
+    def check_password(self, password):
+        password, salt = password.split(':')
+        return password == hashlib.sha256(salt.encode() + self.ui.password_edit.text().encode()).hexdigest()
+
+    def login(self):
+        if len(self.ui.firstname_line.text()) == 0:
+            self.ui.err_label.setText('Fill in all the fields')
+        elif len(self.ui.lastname_line.text()) == 0:
+            self.ui.err_label.setText('Fill in all the fields')
+        elif len(self.ui.password_edit.text()) == 0:
+            self.ui.err_label.setText('Fill in all the fields')
+        else:
+            cur = self.con.cursor()
+            cur.execute('SELECT * FROM employee WHERE first_name = :f_name and second_name = :s_name', \
+                        {'f_name':self.ui.firstname_line.text(), 's_name':self.ui.lastname_line.text()})
+            res = cur.fetchone()
+            if res != None:
+                id, psw, access = res[0], res[3], res[4]
+                if self.check_password(psw):
+                    self.main_window.emit(id, access)
+                else:
+                    self.ui.err_label.setText('Invalid username/password. Logon denied.')
+            else:
+                self.ui.err_label.setText('Invalid username/password. Logon denied.')
+
+        
+class AutoService(QtWidgets.QMainWindow):
+    def __init__(self, id, access):
+        super(AutoService, self).__init__()
+        self.ui = main_Ui_MainWindow()
+        self.ui.setupUi(self)
+        self.user_id = id
+        self.user_access = access
         self.con = cx_Oracle.connect('system/Djdf1605@localhost/orcle')
         self.client_is_editing = False
         self.car_is_editing = False
@@ -27,12 +76,14 @@ class AutoService(QtWidgets.QMainWindow):
         self.show_list(self.ui.deal_prod_listWidget, 10)
         self.show_list(self.ui.orderslistWidget, 10)
         self.show_list(self.ui.order_car_listWidget, 10)
+        self.show_list(self.ui.employeeslistWidget, 12)
 
         self.ui.listWidget.itemSelectionChanged.connect(self.show_info)
         self.ui.carslistWidget.itemSelectionChanged.connect(self.show_info)
         self.ui.productslistWidget.itemSelectionChanged.connect(self.show_info)
         self.ui.dealslistWidget.itemSelectionChanged.connect(self.show_info)
         self.ui.orderslistWidget.itemSelectionChanged.connect(self.show_info)
+        self.ui.employeeslistWidget.itemSelectionChanged.connect(self.show_info)
 
         self.ui.client_car_listWidget.itemSelectionChanged.connect(self.show_line)
         self.ui.deal_prod_listWidget.itemSelectionChanged.connect(self.show_line)
@@ -54,16 +105,19 @@ class AutoService(QtWidgets.QMainWindow):
         self.ui.edit_product_btn.clicked.connect(self.edit)
         self.ui.edit_btn.clicked.connect(self.edit)
         self.ui.edit_car_btn.clicked.connect(self.edit)
+        self.ui.edit_employee_btn.clicked.connect(self.edit)
 
         self.ui.add_prod_btn.clicked.connect(self.add)
         self.ui.add_btn.clicked.connect(self.add)
         self.ui.add_car_btn.clicked.connect(self.add)
         self.ui.add_deal_btn.clicked.connect(self.add)
         self.ui.add_order_button.clicked.connect(self.add)
+        self.ui.add_emp_button.clicked.connect(self.add)
 
         self.ui.delete_btn.clicked.connect(self.delete)        
         self.ui.delete_car_btn.clicked.connect(self.delete)
         self.ui.delete_product_btn.clicked.connect(self.delete)
+        self.ui.delete_employee_btn.clicked.connect(self.delete)
 
         self.ui.deal_client_line.textChanged.connect(self.calc_price)
         self.ui.deal_product_line.textChanged.connect(self.calc_price)
@@ -71,6 +125,29 @@ class AutoService(QtWidgets.QMainWindow):
 
  
     ############################## OTHER ##############################
+    def hash_password(self, password):
+        salt = uuid.uuid4().hex
+        return hashlib.sha256(salt.encode() + password.encode()).hexdigest() + ':' + salt
+
+    def show_deals_orders(self, widget, id):
+        widget.clear()
+        cur = self.con.cursor()
+        if widget.objectName() == 'employee_orders_list':
+            cur.execute('SELECT * FROM orders where employee_id = :id', {'id':id})
+        else:
+            cur.execute('SELECT * FROM deal where employee_id = :id', {'id':id})
+        res = cur.fetchall()
+        for i in res:
+            item = QtWidgets.QListWidgetItem()
+            item.setFont(QtGui.QFont('Tahoma', 10))
+            item.setTextAlignment(Qt.AlignHCenter | Qt.AlignTop)
+            if widget.objectName() == 'employee_orders_list':
+                item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[3]))
+            else:
+                item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[2]))
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsSelectable | Qt.ItemIsDragEnabled)
+            widget.addItem(item)
+
     def show_line(self):
         lines = {
             'client_car_listWidget': self.ui.car_client_id_line_2,
@@ -105,7 +182,7 @@ class AutoService(QtWidgets.QMainWindow):
             cur = self.con.cursor()
             info = cur.var(cx_Oracle.STRING)
             cur.callproc('update_order', (item_id, info))
-            self.ui.order_info_label.setText(info.getvalue())
+            self.ui.order_info_label.setText(info.getvalue().capitalize())
     
     
 
@@ -114,29 +191,35 @@ class AutoService(QtWidgets.QMainWindow):
         procedures = {
             'delete_product_btn':'delete_product',
             'delete_car_btn':'delete_car',
-            'delete_btn':'delete_client'
+            'delete_btn':'delete_client',
+            'delete_employee_btn':'delete_employee'
         }
         labels = {
             'delete_product_btn': self.ui.prod_info_label,
             'delete_car_btn': self.ui.car_info_label,
-            'delete_btn': self.ui.info_label
+            'delete_btn': self.ui.info_label,
+            'delete_employee_btn':self.ui.emp_info_label
         }
         widgets = {
             'delete_product_btn':self.ui.productslistWidget,
             'delete_car_btn':self.ui.carslistWidget,
-            'delete_btn':self.ui.listWidget
+            'delete_btn':self.ui.listWidget,
+            'delete_employee_btn':self.ui.employeeslistWidget
         }
         text = widgets[self.sender().objectName()].selectedItems()[0].text()
         item_id = int(text.split('.')[0])
-        buttonReply = QMessageBox.question(self, 'Confirm delete', \
-                    "Are you sure you want to delete item {}?".format(item_id), \
-                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if buttonReply == QMessageBox.Yes:
-            cur = self.con.cursor()
-            info = cur.var(cx_Oracle.STRING)
-            cur.callproc(procedures[self.sender().objectName()], (item_id, info))
-            labels[self.sender().objectName()].setText(info.getvalue().capitalize()) 
-            self.show_list(widgets[self.sender().objectName()], 12)
+        if self.user_access == 'ADMIN': 
+            buttonReply = QMessageBox.question(self, 'Confirm delete', \
+                        "Are you sure you want to delete item {}?".format(item_id), \
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if buttonReply == QMessageBox.Yes:
+                cur = self.con.cursor()
+                info = cur.var(cx_Oracle.STRING)
+                cur.callproc(procedures[self.sender().objectName()], (item_id, info))
+                labels[self.sender().objectName()].setText(info.getvalue().capitalize()) 
+                self.show_list(widgets[self.sender().objectName()], 12)
+        else:
+            labels[self.sender().objectName()].setText('Not allowed. Not enough privileges.') 
 
 
 
@@ -149,7 +232,8 @@ class AutoService(QtWidgets.QMainWindow):
             'add_car_btn': 'insert_car',
             'add_btn': 'insert_client',
             'add_deal_btn':'insert_deal',
-            'add_order_button':'insert_order'
+            'add_order_button':'insert_order',
+            'add_emp_button':'insert_employee'
         }
         fields = {
             'add_prod_btn':[
@@ -182,6 +266,11 @@ class AutoService(QtWidgets.QMainWindow):
                 self.ui.new_order_price_line,
                 self.ui.new_order_task_line,
                 self.ui.new_order_car_id_line
+            ],
+            'add_emp_button':[
+                self.ui.new_emp_f_name_line,
+                self.ui.new_emp_s_name_line,
+                self.ui.new_emp_psw_line
             ]
         }
         labels = {
@@ -189,34 +278,56 @@ class AutoService(QtWidgets.QMainWindow):
             'add_car_btn': self.ui.car_info_label,
             'add_btn': self.ui.info_label,
             'add_deal_btn':self.ui.prod_info_label_2,
-            'add_order_button':self.ui.order_info_label
+            'add_order_button':self.ui.order_info_label,
+            'add_emp_button':self.ui.emp_info_label
         }
         widgets = {
             'add_prod_btn':self.ui.productslistWidget,
             'add_car_btn':self.ui.carslistWidget,
             'add_btn':self.ui.listWidget,
             'add_deal_btn':self.ui.dealslistWidget,
-            'add_order_button':self.ui.orderslistWidget
+            'add_order_button':self.ui.orderslistWidget,
+            'add_emp_button':self.ui.employeeslistWidget
         }
-        cur = self.con.cursor()
-        info_var = cur.var(cx_Oracle.STRING)
-        rows = [row.text() for row in fields[self.sender().objectName()] if type(row) == QLineEdit]
-        if self.sender().objectName() == 'add_btn':
-            rows[2] = datetime.datetime.strptime(rows[2].replace(' ', ''), '%d-%m-%Y')
-        elif self.sender().objectName() == 'add_deal_btn':
-            rows.insert(1, fields[self.sender().objectName()][1].value())
-        rows.append(info_var)
-        rows = tuple(rows)
-        cur.callproc(procedures[self.sender().objectName()], rows)
-        labels[self.sender().objectName()].setText(info_var.getvalue().capitalize())
-        self.show_list(widgets[self.sender().objectName()], 12)
-        if self.sender().objectName() == 'add_btn':
-            self.show_list(self.ui.client_car_listWidget, 12)
-        for row in fields[self.sender().objectName()]:
-            if type(row) == QLineEdit:
-                row.setText('')
+        if self.user_access in ['ADMIN', 'WORKER']:
+            cur = self.con.cursor()
+            info_var = cur.var(cx_Oracle.STRING)
+            rows = [row.text() for row in fields[self.sender().objectName()] if type(row) == QLineEdit]
+            if self.sender().objectName() == 'add_btn':
+                rows[2] = datetime.datetime.strptime(rows[2].replace(' ', ''), '%d-%m-%Y')
+            elif self.sender().objectName() == 'add_deal_btn':
+                rows.insert(1, fields[self.sender().objectName()][1].value())
+                rows.append(self.user_id)
+            elif self.sender().objectName() == 'add_order_button':
+                rows.append(self.user_id)
+            elif self.sender().objectName() == 'add_emp_button':
+                if self.user_access == 'ADMIN':
+                    rows[2] = self.hash_password(rows[2])
+                    if self.ui.admin_radioButton.isChecked():
+                        rows.append('ADMIN')
+                    elif self.ui.worker_radioButton.isChecked():
+                        rows.append('WORKER')
+                    else:
+                        rows.append('READER')
+                else:
+                    labels[self.sender().objectName()].setText('Not allowed. Not enough privileges.')
+            rows.append(info_var)
+            rows = tuple(rows)
+            cur.callproc(procedures[self.sender().objectName()], rows)
+            labels[self.sender().objectName()].setText(info_var.getvalue().capitalize())
+            if self.sender().objectName() == 'add_btn':
+                self.show_list(widgets[self.sender().objectName()], 10)
             else:
-                row.setValue(1)
+                self.show_list(widgets[self.sender().objectName()], 12)
+            if self.sender().objectName() == 'add_btn':
+                self.show_list(self.ui.client_car_listWidget, 12)
+            for row in fields[self.sender().objectName()]:
+                if type(row) == QLineEdit:
+                    row.setText('')
+                else:
+                    row.setValue(1)
+        else:
+            labels[self.sender().objectName()].setText('Not allowed. Not enough privileges.')
 
 
         
@@ -246,42 +357,53 @@ class AutoService(QtWidgets.QMainWindow):
                 self.ui.bd_line,
                 self.ui.addr_line,
                 self.ui.phone_line
+            ],
+            'edit_employee_btn':[
+                self.ui.emp_id_line,
+                self.ui.emp_f_name_line,
+                self.ui.emp_s_name_line,
+                self.ui.emp_access_line
             ]
         }
         procedures = {
             'edit_product_btn':'update_product',
             'edit_car_btn':'update_car',
-            'edit_btn': 'update_client'
+            'edit_btn': 'update_client',
+            'edit_employee_btn':'update_employee'
         }
         labels = {
             'edit_product_btn': self.ui.prod_info_label,
             'edit_car_btn': self.ui.car_info_label,
-            'edit_btn': self.ui.info_label
+            'edit_btn': self.ui.info_label,
+            'edit_employee_btn':self.ui.emp_info_label
         }
         widgets = {
             'edit_product_btn':self.ui.productslistWidget,
             'edit_car_btn':self.ui.carslistWidget,
-            'edit_btn': self.ui.listWidget
+            'edit_btn': self.ui.listWidget,
+            'edit_employee_btn':self.ui.employeeslistWidget
         }
-        cur = self.con.cursor()
-        info_var = cur.var(cx_Oracle.STRING)
-        rows = [row.text() for row in fields[self.sender().objectName()]]
-        if self.sender().objectName() == 'edit_btn':
-                rows[3] = datetime.datetime.strptime(rows[3].replace(' ', ''), '%d-%m-%Y')
-        rows.append(info_var)
-        rows = tuple(rows)
-        if self.sender().text() == 'SAVE':
-            cur.callproc(procedures[self.sender().objectName()], rows)
-            labels[self.sender().objectName()].setText(info_var.getvalue().capitalize())
-            for field in fields[self.sender().objectName()][1:]:
-                field.setReadOnly(True)
-            self.sender().setText('EDIT')
-            self.show_list(widgets[self.sender().objectName()], 12)
+        if self.user_access in ['ADMIN', 'WORKER']:
+            cur = self.con.cursor()
+            info_var = cur.var(cx_Oracle.STRING)
+            rows = [row.text() for row in fields[self.sender().objectName()]]
+            if self.sender().objectName() == 'edit_btn':
+                    rows[3] = datetime.datetime.strptime(rows[3].replace(' ', ''), '%d-%m-%Y')
+            rows.append(info_var)
+            rows = tuple(rows)
+            if self.sender().text() == 'SAVE':
+                cur.callproc(procedures[self.sender().objectName()], rows)
+                labels[self.sender().objectName()].setText(info_var.getvalue().capitalize())
+                for field in fields[self.sender().objectName()][1:]:
+                    field.setReadOnly(True)
+                self.sender().setText('EDIT')
+                self.show_list(widgets[self.sender().objectName()], 12)
+            else:
+                for field in fields[self.sender().objectName()][1:]:
+                    field.setReadOnly(False)
+                self.sender().setText('SAVE')
         else:
-            for field in fields[self.sender().objectName()][1:]:
-                field.setReadOnly(False)
-            self.sender().setText('SAVE')
-
+            labels[self.sender().objectName()].setText('Not allowed. Not enough privileges.')
 
 
     ############################## SEARCH ##############################      
@@ -335,7 +457,7 @@ class AutoService(QtWidgets.QMainWindow):
                     for item in result:
                         res.append(item)
                 except:
-                    pass
+                    print('Error')
         else:
             cur.execute(procedures[str(self.sender().objectName())], params[str(self.sender().objectName())])
             res = cur.fetchall()
@@ -418,6 +540,12 @@ class AutoService(QtWidgets.QMainWindow):
                 self.ui.order_car_vin,
                 self.ui.order_client_id,
                 self.ui.order_price_line
+            ],
+            'employeeslistWidget':[
+                self.ui.emp_id_line,
+                self.ui.emp_f_name_line,
+                self.ui.emp_s_name_line,
+                self.ui.emp_access_line
             ]
         }
         procedures = {
@@ -425,7 +553,8 @@ class AutoService(QtWidgets.QMainWindow):
             'listWidget':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT(:param))',
             'carslistWidget':'SELECT * FROM cars_details where car_id = :param',
             'dealslistWidget':'SELECT * FROM deals_details WHERE deal_id = :param',
-            'orderslistWidget':'SELECT * FROM orders_details WHERE order_id = :param'
+            'orderslistWidget':'SELECT * FROM orders_details WHERE order_id = :param',
+            'employeeslistWidget':'SELECT * FROM employees_details WHERE employee_id = :param'
         }
         try:
             text = list_widget.selectedItems()[0].text()
@@ -442,6 +571,10 @@ class AutoService(QtWidgets.QMainWindow):
                 res = list(cur.fetchone())
             if self.sender().objectName() == 'dealslistWidget':
                 res.remove(res[8])
+            elif self.sender().objectName() == 'employeeslistWidget':
+                res.remove(res[3])
+                self.show_deals_orders(self.ui.employee_orders_list, item_id)
+                self.show_deals_orders(self.ui.employee_deals_list, item_id)
             for i in range(len(res)):
                 if type(res[i]) == datetime.datetime:
                     fields[self.sender().objectName()][i].setText(res[i].strftime("%d-%m-%Y "))
@@ -465,11 +598,14 @@ class AutoService(QtWidgets.QMainWindow):
             'deal_client_listWidget':'SELECT * FROM TABLE(SEARCH_CLIENT.SEARCH_CLIENT())',
             'deal_prod_listWidget':'SELECT * FROM TABLE(search_product.search_product())',
             'orderslistWidget':'SELECT * FROM TABLE(search_order.search_order_all())',
-            'order_car_listWidget':'SELECT * FROM TABLE(search_car.search_car())'
+            'order_car_listWidget':'SELECT * FROM TABLE(search_car.search_car())',
         }
         widget.clear()
         cur = self.con.cursor()
-        cur.execute(procedures[str(widget.objectName())])
+        if widget.objectName() == 'employeeslistWidget':
+            cur.execute('SELECT * FROM employees_details')
+        else:
+            cur.execute(procedures[str(widget.objectName())])
         res = cur.fetchall()
         for i in res:
             item = QtWidgets.QListWidgetItem()
@@ -481,13 +617,30 @@ class AutoService(QtWidgets.QMainWindow):
                 item.setText(str(i[0]) + '. ' + str(i[1])+ ' ' + str(i[2]))
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsSelectable | Qt.ItemIsDragEnabled)
             widget.addItem(item)
+
+
+class Controller:
     
+    def __init__(self):
+        pass
+
+    def show_login(self):
+        self.login = LoginPage()
+        self.login.show()
+        self.login.main_window.connect(self.show_main)
+    
+    def show_main(self, id, access):
+        self.main = AutoService(id, access)
+        self.login.close()
+        self.main.show()
+
+
 def main():
     app = QtWidgets.QApplication(sys.argv)
     app.setStyle('Fusion')
-    
-    autoservice = AutoService()
-    autoservice.show()
+    print('Hello world!')
+    controller = Controller()
+    controller.show_login()
     sys.exit(app.exec_())
         
 

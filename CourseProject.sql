@@ -9,6 +9,15 @@ CREATE TABLE client
   phone VARCHAR(20) NOT NULL
 );
 
+CREATE TABLE employee
+(
+  employee_id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, 
+  first_name VARCHAR(100),
+  second_name VARCHAR(100),
+  password_hash VARCHAR(100),
+  access_type VARCHAR(50) CHECK (access_type IN ('ADMIN', 'WORKER', 'READER'))
+);
+
 CREATE TABLE car
 (
   car_id NUMBER(10) GENERATED ALWAYS AS IDENTITY PRIMARY KEY, 
@@ -40,11 +49,15 @@ CREATE TABLE deal
   quantity NUMBER(10) DEFAULT 1,
   client_id NUMBER(10),
   price NUMBER(10, 2) DEFAULT NULL,
+  employee_id NUMBER,
   FOREIGN KEY (client_id)
           REFERENCES client(client_id)
           ON DELETE CASCADE,
   FOREIGN KEY (product_id)
           REFERENCES product(product_id)
+          ON DELETE CASCADE,
+  FOREIGN KEY (employee_id)
+          REFERENCES employee(employee_id)
           ON DELETE CASCADE
 );
 
@@ -57,8 +70,12 @@ CREATE TABLE orders
   price NUMBER(10, 2),
   task VARCHAR(100),
   car_id NUMBER(10),
+  employee_id NUMBER,
   FOREIGN KEY (car_id)
           REFERENCES car(car_id)
+          ON DELETE CASCADE,
+  FOREIGN KEY (employee_id)
+          REFERENCES employee(employee_id)
           ON DELETE CASCADE
 );
 -------------------------------------TABLES-------------------------------------
@@ -78,6 +95,9 @@ CREATE OR REPLACE VIEW deals_details AS
             INNER JOIN client ON deal.client_id = client.client_id
   ORDER BY deal.deal_date DESC
 
+CREATE OR REPLACE VIEW employees_details AS
+  SELECT * FROM employee order by second_name, first_name
+  
 CREATE OR REPLACE VIEW orders_details AS
   SELECT orders.order_id, orders.order_in, orders.order_out, orders.task,
          orders.status, orders.car_id, car.make, car.MODEL, car.vin,
@@ -103,7 +123,7 @@ CREATE OR REPLACE TRIGGER deal_trigger
   BEFORE INSERT ON deal
   FOR EACH ROW
   DECLARE 
-    price_var NUMBER(10);
+    price_var NUMBER(10, 2);
   BEGIN
     dbms_output.put_line('NEW DEAL ON PRODUCT' ||' '|| :NEW.product_id || ' - ' || :NEW.quantity || ' PIECES' );
     UPDATE product SET quantity = quantity - :NEW.quantity WHERE product_id = :NEW.product_id;
@@ -219,7 +239,8 @@ CREATE OR REPLACE PACKAGE BODY search_client AS
       elsif p_client_id IS NULL THEN
          FOR curr IN
           (
-            SELECT * FROM client WHERE LOWER(second_name) LIKE '%'||LOWER(p_second_name)||'%'
+            SELECT * FROM client WHERE to_char(client_id) = p_second_name OR
+            LOWER(second_name) LIKE '%'||LOWER(p_second_name)||'%'
             OR LOWER(first_name) LIKE '%'||LOWER(p_second_name)||'%'
             ORDER BY second_name, first_name
           ) loop  
@@ -237,6 +258,48 @@ CREATE OR REPLACE PACKAGE BODY search_client AS
     END IF;
     END search_client;
 END;
+
+--Employees Procedures--
+CREATE OR REPLACE PROCEDURE insert_employee(
+    p_first_name IN employee.first_name%TYPE, 
+    p_second_name IN employee.second_name%TYPE,
+    p_password IN employee.password_hash%TYPE,
+    p_access IN employee.access_type%TYPE,
+    p_info_var out VARCHAR)
+IS
+BEGIN
+   INSERT INTO employee(first_name, second_name, password_hash, access_type)
+   VALUES (p_first_name, p_second_name, p_password, p_access);
+   p_info_var := 'NEW EMPLOYEE ADDED';
+   COMMIT;
+END;
+
+CREATE OR REPLACE PROCEDURE delete_employee(
+  p_employee_id IN employee.employee_id%TYPE,
+  p_info_var out VARCHAR
+)
+IS
+BEGIN
+  DELETE FROM employee WHERE employee_id = p_employee_id;
+  p_info_var := 'EMPLOYEE '|| p_employee_id ||' DELETE';
+  COMMIT;
+END;
+
+CREATE OR REPLACE PROCEDURE update_employee(
+    p_employee_id IN employee.employee_id%TYPE,
+    p_first_name IN employee.first_name%TYPE, 
+    p_second_name IN employee.second_name%TYPE,
+    p_access IN employee.access_type%TYPE,
+    p_info_var out VARCHAR)
+IS
+BEGIN
+   UPDATE employee SET first_name = p_first_name, second_name = p_second_name,
+   access_type = p_access
+   WHERE employee_id = p_employee_id;
+   p_info_var := 'EMPLOYEE '|| p_employee_id || ' UPDATED';
+   COMMIT;
+END;
+
 
 --Products Procedures--
 CREATE OR REPLACE PROCEDURE insert_product(
@@ -320,12 +383,10 @@ CREATE OR REPLACE PACKAGE BODY search_product AS
       ELSE
         FOR curr IN
           (
-            SELECT * FROM products_details WHERE lower(product_name) 
-            like '%'|| lower(p_query) || '%'
-            OR lower(manufacturer) like '%'|| lower(p_query) || '%'
-            OR lower(concat(concat(product_name, ' '), manufacturer))
+            SELECT * FROM products_details WHERE to_char(product_id) = p_query OR
+            lower(concat(concat(product_name, ' '), manufacturer))
             LIKE '%'|| lower(p_query) || '%'
-            or lower(info) like '%'|| lower(p_query) || '%'
+            OR lower(info) LIKE '%'|| lower(p_query) || '%'
           ) loop  
           pipe ROW (curr);
           END loop;
@@ -428,7 +489,8 @@ CREATE OR REPLACE PACKAGE BODY search_car AS
       ELSE
         FOR curr IN
           (
-            SELECT * FROM cars_details WHERE lower(make) LIKE '%'|| lower(p_query) ||'%'
+            SELECT * FROM cars_details WHERE to_char(car_id) = p_query OR
+            lower(make) LIKE '%'|| lower(p_query) ||'%'
             OR lower(MODEL) LIKE '%'|| lower(p_query) ||'%' OR lower(vin) LIKE '%'|| lower(p_query) ||'%'
             OR lower(concat(concat(first_name, ' '), second_name)) LIKE '%'|| lower(p_query) ||'%'
           ) loop  
@@ -445,6 +507,7 @@ CREATE OR REPLACE PROCEDURE insert_deal(
     p_product_id IN deal.product_id%TYPE,
     p_quantity IN deal.quantity%TYPE,
     p_client_id IN deal.client_id%TYPE,
+    p_employee_id IN deal.employee_id%TYPE,
     info OUT VARCHAR
     )
 IS
@@ -456,10 +519,11 @@ BEGIN
     THEN
     info := 'NOT ENOUGH PRODUCTS: '|| product_number ||' LEFT';
   ELSE
-    INSERT INTO deal(deal_date, product_id, quantity, client_id)
-    VALUES(SYSDATE, p_product_id, p_quantity, p_client_id);
+    INSERT INTO deal(deal_date, product_id, quantity, client_id, employee_id)
+    VALUES(SYSDATE, p_product_id, p_quantity, p_client_id, p_employee_id);
     info := 'NEW DEAL CREATED';
   END IF;
+  COMMIT;
 END;
 
 CREATE OR REPLACE PACKAGE search_deal AS
@@ -506,7 +570,7 @@ CREATE OR REPLACE PACKAGE BODY search_deal AS
       ELSE
         FOR curr IN
           (
-            SELECT * FROM deals_details WHERE 
+            SELECT * FROM deals_details WHERE to_char(deal_id) = p_query OR
             lower(concat(concat(first_name, ' '), second_name)) LIKE '%'|| lower(p_query) ||'%'
           ) loop  
           pipe ROW (curr);
@@ -521,12 +585,13 @@ CREATE OR REPLACE PROCEDURE insert_order(
     p_price IN orders.price%TYPE,
     p_task IN orders.task%TYPE,
     p_car_id IN orders.car_id%TYPE,
+    p_employee_id IN orders.employee_id%TYPE,
     info OUT VARCHAR
     )
 IS
 BEGIN
-  INSERT INTO orders(order_in, price, task, car_id)
-  VALUES(SYSDATE, p_price, p_task, p_car_id);
+  INSERT INTO orders(order_in, price, task, car_id, employee_id)
+  VALUES(SYSDATE, p_price, p_task, p_car_id, p_employee_id);
   info := 'NEW ORDER CREATED';
   COMMIT;
 END;
@@ -678,7 +743,7 @@ END;
 
 
 -------------------------------------SELECTS------------------------------------
-SELECT * FROM TABLE(search_client.search_client(NULL, 'Hitsarau'));
+SELECT * FROM TABLE(search_client.search_client());
 SELECT * FROM TABLE(search_order.search_order_id(5));
 SELECT * FROM TABLE(search_order.search_order_name('avad'));
 SELECT * FROM TABLE(search_order.search_order_date('19-05-2020'));
@@ -690,105 +755,44 @@ SELECT * FROM deals_details
 SELECT * FROM orders_details
 SELECT * FROM cars_details
 SELECT * FROM products_details
+SELECT * FROM employees_details
 SELECT * FROM client
 SELECT * FROM car
+select * from employee
 SELECT * FROM product
 SELECT * FROM deal
 SELECT * FROM orders
-
-SELECT * FROM products_details WHERE product_id = 41
 -------------------------------------SELECTS------------------------------------
 
 
 
--------------------------------DATA MANIPULATIONS-------------------------------
-INSERT INTO CLIENT(FIRST_NAME, SECOND_NAME, BIRTHDATE, ADDRESS, PHONE) 
+-------------------------------INSERTION EXAMPLES-------------------------------
+INSERT INTO client(first_name, second_name, birthdate, address, phone) 
 VALUES('John', 'Doe', '01-01-2000', 'New-York, 93426 street, 1', '+7223534657');
-INSERT INTO CLIENT(FIRST_NAME, SECOND_NAME, BIRTHDATE, ADDRESS, PHONE) 
-VALUES('Uladzimir', 'Hitsarau', '16-05-1999', 'Novopolotsk, Kalinina street, 27-20', '+375292175186');
 
-INSERT INTO CAR(MAKE, MODEL, YEAR, VIN, CLIENT_ID) 
+INSERT INTO car(make, model, year, vin, client_id) 
 VALUES('Tesla', 'Model S', 2018, 'MYTESLA', 1);
-INSERT INTO CAR(MAKE, MODEL, YEAR, VIN, CLIENT_ID) 
-VALUES('Ford', 'Mondeo', 2009, '9121 BM-2', 2);
 
-INSERT INTO PRODUCT(PRODUCT_NAME, MANUFACTURER, INFO, PRICE, QUANTITY) 
+INSERT INTO product(product_name, manufacturer, info, price, quantity) 
 VALUES ('Tyre', 'Belshina', 'Bel-203 215/55R16 93H (2015)', 29.99, 100);
-INSERT INTO PRODUCT(PRODUCT_NAME, MANUFACTURER, INFO, PRICE, QUANTITY) 
-VALUES ('Headlight', 'DJ Auto', 'O-PF-16649', 50.49, 20);
 
-INSERT INTO DEAL(DEAL_DATE, PRODUCT_ID, QUANTITY, CLIENT_ID) 
-VALUES (SYSDATE, 1, 4, 21);
-INSERT INTO DEAL(DEAL_DATE, PRODUCT_ID, QUANTITY, CLIENT_ID) 
-VALUES (SYSDATE, 2, 2, 41);
+INSERT INTO deal(deal_date, product_id, quantity, client_id) 
+VALUES (SYSDATE, 1, 1, 1);
 
-DECLARE 
-  info VARCHAR(50);
-BEGIN
-  INSERT_CLIENT('Uladzimir', 'Hitsarau', '16-05-1999', 'Novopolotsk, Kalinina street, 27-20', '+375292175186');
-  INSERT_CLIENT('John', 'Doe', '01-01-2000', 'New-York, 93426 street, 1', '+7223534657');
-  INSERT_CLIENT('Vadim','Schevelev', '14-12-1999', 'Novopolotsk, Molodezhnaya street, 111-159', '+375298989155');
-  INSERT_CLIENT('Igor', 'Gavrilenko', '2-7-2000', 'Novopolotsk, Molodezhnaya street, 111-122', '+452281337');
-  INSERT_CLIENT('Elena', 'Zavadskaya', '29-04-1999', 'Minsk, Kalinovskogo street, 79-35', '+375447213359', info);
-END;
+INSERT INTO orders(order_in, status, price, task, car_id, employee_id)
+values (sysdate)
 
-DECLARE 
-  info VARCHAR(50);
-BEGIN
-  insert_product('Engine Oil', 'G-Energy', 'Expert L 10W-40 5 l.', 19.79, 75, info);
-  dbms_output.put_line(info);
-END;
-
-DECLARE 
-  info VARCHAR(50);
-BEGIN
-  delete_product(21, info);
-  dbms_output.put_line(info);
-END;
-
-DECLARE 
-  info VARCHAR(50);
-BEGIN
-  insert_car('Ford', 'Mondeo', 2010, '9121 BM-2', 3, info);
-  dbms_output.put_line(info);
-END;
-
-DECLARE 
-  info VARCHAR(50);
-BEGIN
-  insert_deal(1, 10, 3, info);
-  dbms_output.put_line(info);
-END;
-
-DECLARE 
-  info VARCHAR(50);
-BEGIN
-  insert_order(4.59, 'Change oil', 61, info);
-  dbms_output.put_line(info);
-END;
-
-DECLARE 
-  info VARCHAR(50);
-BEGIN
-  update_order(5, info);
-  dbms_output.put_line(info);
-END;
--------------------------------DATA MANIPULATIONS------------------------------- 
+INSERT INTO employee(first_name, second_name, password_hash, access_type)
+VALUES ('Uladzimir', 'Hitsarau', 
+'3bf078263e9c75e54a63ab5c8f2e82acb7e9d78157824e914d78c5678404fad1:e6f6a3d282db4a44b9a9b12b3714115d',
+'ADMIN');
+-------------------------------INSERTION EXAMPLES------------------------------- 
 
 
 
 --------------------------------------DROPS-------------------------------------
-DROP PROCEDURE insert_client
-DROP PROCEDURE update_client
-DROP PROCEDURE delete_client
-DROP PROCEDURE insert_product
-DROP PROCEDURE update_client
-DROP PROCEDURE delete_client
-DROP PROCEDURE insert_car
-DROP PROCEDURE update_car
-DROP PROCEDURE delete_car
-DROP PACKAGE SEARCH_CLIENT
 DROP TABLE CAR;
+DROP TABLE EMPLOYEE;
 DROP TABLE CLIENT;
 DROP TABLE PRODUCT;
 DROP TABLE DEAL;
